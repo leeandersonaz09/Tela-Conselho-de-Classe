@@ -25,8 +25,8 @@ body {
 
 #headerImage {
   width: 100%;
-  height: auto;
-  max-height: 80px;
+  height: 120px;
+  max-height: 120px;
   object-fit: contain;
   object-position: center;
   flex-shrink: 0;

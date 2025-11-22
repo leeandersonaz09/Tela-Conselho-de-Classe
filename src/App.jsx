@@ -245,7 +245,7 @@ function App() {
       {/* HEADER */}
       <img
         id="headerImage"
-        src="/src/assets/header-img.png"
+        src="https://raw.githubusercontent.com/leeandersonaz09/Tela-Conselho-de-Classe/refs/heads/main/src/assets/header-img.png"
         alt="Cabeçalho Relatório"
       />
 
