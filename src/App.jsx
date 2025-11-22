@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef } from "react";
-import * as XLSX from "xlsx"; // Importa a biblioteca de leitura de Excel
+import { useState, useEffect } from "react";
+import * as XLSX from "xlsx";
 import "./App.css";
 
 function App() {
@@ -15,70 +15,69 @@ function App() {
   const [mediaCorte, setMediaCorte] = useState(6.0);
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
+  
+  // Filtros
+  const [selectedDisciplines, setSelectedDisciplines] = useState([]); 
+  const [disciplineFilterOpen, setDisciplineFilterOpen] = useState(false);
+  const [highlightStages, setHighlightStages] = useState(false);
 
-  // Estado do Modal de Foto
+  // Modal de Foto
   const [modalOpen, setModalOpen] = useState(false);
   const [modalImgSrc, setModalImgSrc] = useState("");
   const [isZoomed, setIsZoomed] = useState(false);
 
-  // --- LÓGICA DE IMPORTAÇÃO DA PLANILHA (Substitui o Google Script) ---
   const handleFileUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
     setLoading(true);
     setErrorMsg("");
-    setAllStudents([]); // Limpa dados anteriores
+    setAllStudents([]);
 
     const reader = new FileReader();
     reader.onload = (evt) => {
       try {
         const bstr = evt.target.result;
         const wb = XLSX.read(bstr, { type: "binary" });
-
-        // Pega a primeira aba da planilha
         const wsname = wb.SheetNames[0];
         const ws = wb.Sheets[wsname];
-
-        // Converte para array de arrays (igual ao getValues() do GAS)
         const data = XLSX.utils.sheet_to_json(ws, { header: 1 });
-
         processData(data);
       } catch (err) {
         console.error(err);
-        setErrorMsg("Erro ao ler o arquivo. Verifique o formato.");
+        setErrorMsg("Erro ao ler o arquivo. Verifique se é um Excel válido.");
         setLoading(false);
       }
     };
     reader.readAsBinaryString(file);
   };
 
-  // --- PROCESSAMENTO DE DADOS (Traduzido do GAS) ---
   const processData = (values) => {
     if (!values || values.length < 2) {
-      setErrorMsg("A planilha parece estar vazia ou sem cabeçalho.");
+      setErrorMsg("A planilha parece estar vazia.");
       setLoading(false);
       return;
     }
 
-    const headers = values[0].map(String);
+    const headers = values[0].map((h) => String(h).trim().toLowerCase());
 
-    // Mapear índices das colunas
     const COL_ALUNO_ID = headers.indexOf("cd_aluno");
     const COL_NOME = headers.indexOf("nm_pessoa");
     const COL_FOTO = headers.indexOf("ds_link_foto");
     const COL_DISCIPLINA = headers.indexOf("disciplina");
-    const COL_NOTA1 = headers.indexOf("nota_d1");
-    const COL_NOTA2 = headers.indexOf("nota_d2");
-    const COL_NOTA3 = headers.indexOf("nota_d3");
-    const COL_MF = headers.indexOf("mediafinal");
-    const COL_TURMA = headers.indexOf("ds_turma");
+    
+    // Mapeia colunas de notas
+    const COL_NOTA1 = headers.indexOf("nota_d1") > -1 ? headers.indexOf("nota_d1") : headers.indexOf("nota"); 
+    const COL_NOTA2 = headers.indexOf("nota_d2") > -1 ? headers.indexOf("nota_d2") : headers.indexOf("rec"); 
+    const COL_NOTA3 = headers.indexOf("nota_d3"); 
+    
+    let COL_MF = headers.indexOf("media");
+    if (COL_MF === -1) COL_MF = headers.indexOf("mediafinal");
+    
+    const COL_TURMA = headers.findIndex(h => h === "ds_turma" || h === "turma");
 
-    // Validação de colunas
-    if ([COL_ALUNO_ID, COL_NOME, COL_MF, COL_TURMA].includes(-1)) {
-      setErrorMsg(
-        "Colunas obrigatórias não encontradas (cd_aluno, nm_pessoa, mediafinal, ds_turma)."
-      );
+    if (COL_ALUNO_ID === -1 || COL_NOME === -1 || COL_MF === -1) {
+      setErrorMsg("Faltando colunas: cd_aluno, nm_pessoa, media.");
       setLoading(false);
       return;
     }
@@ -89,22 +88,23 @@ function App() {
 
     for (let i = 1; i < values.length; i++) {
       const row = values[i];
-      // Proteção contra linhas vazias no final
       if (!row[COL_ALUNO_ID]) continue;
 
       const studentId = String(row[COL_ALUNO_ID]).trim();
-
-      // Captura Turmas
-      const turmaName = String(row[COL_TURMA] || "").trim();
+      const turmaName = COL_TURMA > -1 ? String(row[COL_TURMA] || "Geral").trim() : "Geral";
       if (turmaName) turmasSet.add(turmaName);
 
-      // Cria objeto do aluno se não existir
       if (!studentsMap[studentId]) {
-        let thumbUrl = row[COL_FOTO] ? String(row[COL_FOTO]).trim() : "";
-        // Lógica de URL da foto
-        let fullUrl = thumbUrl
-          .replace(/&width=\d+/i, "&width=600")
-          .replace(/&height=\d+/i, "&height=875");
+        // --- LÓGICA DA FOTO (CORRIGIDA) ---
+        let thumbUrl = (COL_FOTO > -1 && row[COL_FOTO]) ? String(row[COL_FOTO]).trim() : "";
+        let fullUrl = thumbUrl;
+        
+        // Se a URL tiver parametros de tamanho, substituímos para alta resolução
+        if (thumbUrl.includes("width=")) {
+             fullUrl = thumbUrl
+              .replace(/&width=\d+/i, "&width=600")
+              .replace(/&height=\d+/i, "&height=875");
+        }
 
         studentsMap[studentId] = {
           id: studentId,
@@ -116,82 +116,96 @@ function App() {
         };
       }
 
-      // Processa Disciplinas
-      let disciplina = row[COL_DISCIPLINA]
-        ? String(row[COL_DISCIPLINA]).trim()
-        : "";
+      let disciplina = COL_DISCIPLINA > -1 ? String(row[COL_DISCIPLINA] || "").trim() : "";
+      disciplina = disciplina.replace(/^"|"$/g, '');
       let disciplinaKey = disciplina.toUpperCase();
 
-      if (!disciplinaKey || disciplinaKey === "SOESP") continue;
+      if (!disciplinaKey || disciplinaKey === "---") continue;
 
       if (!discOrderTemp.includes(disciplinaKey)) {
         discOrderTemp.push(disciplinaKey);
       }
 
       studentsMap[studentId].grades[disciplinaKey] = {
-        etapa1: row[COL_NOTA1],
-        etapa2: row[COL_NOTA2],
-        etapa3: row[COL_NOTA3],
+        etapa1: COL_NOTA1 > -1 ? row[COL_NOTA1] : "",
+        etapa2: COL_NOTA2 > -1 ? row[COL_NOTA2] : "",
+        etapa3: COL_NOTA3 > -1 ? row[COL_NOTA3] : "",
         mf: row[COL_MF],
       };
     }
 
-    // Finalização
     setDisciplinesOrder(discOrderTemp);
+
+    // --- SELEÇÃO INTELIGENTE (RESOLVE O PROBLEMA DA ALICE) ---
+    // Removemos automaticamente da seleção inicial as matérias que não usam nota numérica
+    const ignoreList = ["EDF", "PV", "SOESP", "ART.P"]; 
+    
+    const initialSelected = discOrderTemp.filter(
+      (d) => !ignoreList.some(ignored => d.includes(ignored))
+    );
+    
+    setSelectedDisciplines(initialSelected);
     setTurmas(Array.from(turmasSet).sort());
-    setAllStudents(Object.values(studentsMap)); // A ordem original não é garantida por objeto, mas faremos sort depois
+    setAllStudents(Object.values(studentsMap));
     setLoading(false);
   };
 
-  // --- EFEITO DE FILTRO ---
+  // --- EFEITO DE FILTRO (COMPARADOR) ---
   useEffect(() => {
     if (allStudents.length === 0) {
       setFilteredStudents([]);
       return;
     }
 
-    // 1. Filtra por Turma
     let temp = allStudents;
+
+    // 1. Filtro Turma
     if (selectedTurma !== "todas") {
       temp = temp.filter((s) => s.turma === selectedTurma);
     }
 
-    // 2. Filtra por Notas Baixas (Lógica original)
-    // Mostra o aluno SE ele tiver pelo menos uma nota abaixo da média (exceto EDF)
+    // 2. Filtro de Notas (O coração da lógica)
     temp = temp.filter((student) => {
-      let hasBelowGrade = false;
       if (!student.grades) return false;
+      
+      // O aluno só aparece se tiver ALGUMA nota vermelha ou falta de nota
+      // APENAS nas disciplinas selecionadas.
+      return selectedDisciplines.some((subject) => {
+        const subjectKey = subject.toUpperCase();
+        const gradeInfo = student.grades[subjectKey];
 
-      for (const subject in student.grades) {
-        if (subject.toUpperCase() === "EDF") continue;
+        // Se a disciplina foi selecionada mas o aluno não tem registro nela
+        // Consideramos pendência (mas como removemos EDF/PV da seleção, isso não afeta Alice)
+        if (!gradeInfo) return true; 
 
-        const gradeInfo = student.grades[subject];
         const mfStr = String(gradeInfo.mf).replace(",", ".").trim();
         const mf = parseFloat(mfStr);
 
+        // Se a nota final for vazia, inválida ou MENOR que o corte -> MOSTRA O ALUNO
         if (mfStr === "---" || mfStr === "" || isNaN(mf) || mf < mediaCorte) {
-          hasBelowGrade = true;
-          break;
+           return true;
         }
-      }
-      return hasBelowGrade;
+        
+        // Se a nota for >= mediaCorte, retorna false (não mostra por causa dessa matéria)
+        return false;
+      });
     });
 
-    // 3. Ordenação Alfabética Inicial
     temp.sort((a, b) => a.name.localeCompare(b.name));
-
     setFilteredStudents(temp);
-    setCurrentIndex(0); // Reseta paginação ao filtrar
-  }, [allStudents, selectedTurma, mediaCorte]);
+    setCurrentIndex(0);
+  }, [allStudents, selectedTurma, mediaCorte, selectedDisciplines]);
 
-  // --- HELPERS DE RENDERIZAÇÃO ---
+  // --- FORMATAÇÃO DE NOTAS ---
   const formatGrade = (value, applyRedClass) => {
+    if (value === undefined || value === null) return { value: "-", className: "grade-blank" };
+    
     const str = String(value).replace(",", ".").trim();
     const num = parseFloat(str);
 
-    if (str === "---" || str === "" || isNaN(num) || value === undefined) {
+    if (str === "---" || str === "" || isNaN(num)) {
       return {
-        value: <span className="grade-blank">{value || "-"}</span>,
+        value: <span className="grade-blank">-</span>,
         className: "grade-blank",
       };
     }
@@ -206,98 +220,100 @@ function App() {
     return { value: displayVal, className };
   };
 
-  // Inverter Ordem das Disciplinas
   const toggleDisciplineOrder = () => {
     setDisciplinesOrder((prev) => [...prev].reverse());
   };
 
-  // Renderização condicional do aluno atual
-  const currentStudent = filteredStudents[currentIndex];
+  const handleDisciplineSelection = (discipline) => {
+    setSelectedDisciplines((prev) =>
+      prev.includes(discipline)
+        ? prev.filter((d) => d !== discipline)
+        : [...prev, discipline]
+    );
+  };
+  const selectAllDisciplines = () => setSelectedDisciplines(disciplinesOrder);
+  const deselectAllDisciplines = () => setSelectedDisciplines([]);
 
-  // Cálculo de Status Box (Recuperação vs Conselho)
+  // --- CALCULO DO STATUS (RECUPERAÇÃO vs CONSELHO) ---
+  const currentStudent = filteredStudents[currentIndex];
   let statusBoxHtml = null;
+  
   if (currentStudent) {
     let belowAverageCount = 0;
-    for (const subject in currentStudent.grades) {
-      if (subject.toUpperCase() === "EDF") continue;
-      const val = currentStudent.grades[subject].mf;
-      const str = String(val).replace(",", ".").trim();
-      const num = parseFloat(str);
-      if (str === "---" || str === "" || isNaN(num) || num < mediaCorte) {
-        belowAverageCount++;
-      }
-    }
+    
+    // Conta quantas matérias ruins o aluno tem (baseado APENAS nas selecionadas)
+    selectedDisciplines.forEach((subject) => {
+        const key = subject.toUpperCase();
+        const g = currentStudent.grades[key];
+        
+        if(!g) { belowAverageCount++; return; }
+        
+        const str = String(g.mf).replace(",", ".").trim();
+        const num = parseFloat(str);
+        
+        if (str === "" || isNaN(num) || num < mediaCorte) {
+            belowAverageCount++;
+        }
+    });
 
     if (belowAverageCount > 0) {
       if (belowAverageCount >= 5) {
-        statusBoxHtml = <span className="status-box red">Recuperação</span>;
+        statusBoxHtml = <span className="status-box red">Recuperação ({belowAverageCount})</span>;
       } else {
-        statusBoxHtml = (
-          <span className="status-box green">Apto para conselho</span>
-        );
+        statusBoxHtml = <span className="status-box green">Apto para conselho ({belowAverageCount})</span>;
       }
     }
   }
 
-  // --- RENDER DO APP ---
   return (
     <div className="app-container">
-      {/* HEADER */}
       <img
         id="headerImage"
         src="https://raw.githubusercontent.com/leeandersonaz09/Tela-Conselho-de-Classe/refs/heads/main/src/assets/header-img.png"
         alt="Cabeçalho Relatório"
       />
 
-      {/* ÁREA DE CONTEÚDO */}
       <div className="content-container">
         {loading && <div className="info-message">Processando planilha...</div>}
         {errorMsg && <div className="error-message">{errorMsg}</div>}
 
-        {!loading &&
-          filteredStudents.length === 0 &&
-          allStudents.length > 0 && (
+        {!loading && filteredStudents.length === 0 && allStudents.length > 0 && (
             <div className="info-message">
-              Nenhum aluno encontrado com os filtros atuais.
+                Nenhum aluno encontrado com pendências nas disciplinas selecionadas.
             </div>
-          )}
+        )}
 
         {!loading && allStudents.length === 0 && !errorMsg && (
           <div className="info-message" style={{ marginTop: "50px" }}>
-            <h3>Bem-vindo ao Visualizador</h3>
-            <p>
-              Por favor, carregue a planilha (.xlsx ou .csv) abaixo para
-              começar.
-            </p>
+            <h3>Carregue a planilha para iniciar</h3>
           </div>
         )}
 
-        {/* CARTÃO DO ALUNO */}
         {currentStudent && (
-          <div id="studentCard" style={{ display: "block" }}>
+          <div id="studentCard">
             <div className="student-info">
               <img
-                src={
-                  currentStudent.photoUrl ||
-                  "https://via.placeholder.com/100?text=Foto"
-                }
+                src={currentStudent.photoUrl || "https://via.placeholder.com/100?text=Foto"}
                 alt={`Foto de ${currentStudent.name}`}
-                onError={(e) => {
-                  e.target.onerror = null;
-                  e.target.src =
-                    "https://via.placeholder.com/100?text=Sem+Foto";
-                }}
+                onError={(e) => { e.target.onerror = null; e.target.src = "https://via.placeholder.com/100?text=Sem+Foto"; }}
                 onClick={() => {
-                  setModalImgSrc(
-                    currentStudent.fullPhotoUrl || currentStudent.photoUrl
-                  );
+                  setModalImgSrc(currentStudent.fullPhotoUrl || currentStudent.photoUrl);
                   setModalOpen(true);
                   setIsZoomed(false);
                 }}
+                style={{cursor: 'pointer'}} 
               />
-              <h2>
-                {currentStudent.name} {statusBoxHtml}
-              </h2>
+              <div style={{width:'100%'}}>
+                  <div style={{display:'flex', justifyContent:'space-between'}}>
+                      <h2 style={{margin:0}}>
+                        {currentStudent.name} {statusBoxHtml}
+                      </h2>
+                      {/* Pequeno contador de posicao */}
+                      <span style={{color:'#777', fontSize:'0.9em'}}>
+                        {currentIndex + 1} / {filteredStudents.length}
+                      </span>
+                  </div>
+              </div>
             </div>
 
             <table className="grades-table">
@@ -307,25 +323,35 @@ function App() {
                   <th>Etapa 1</th>
                   <th>Etapa 2</th>
                   <th>Etapa 3</th>
-                  <th>MF (Média Final)</th>
+                  <th>Média Final</th>
                 </tr>
               </thead>
               <tbody>
                 {disciplinesOrder.map((subject) => {
-                  // Só renderiza se o aluno tiver nota nessa matéria (ou exibe vazio se preferir, a lógica original ocultava se não existisse no map)
-                  // A lógica original usava as chaves do aluno se order estivesse vazia, mas aqui sempre teremos order.
-                  // Vamos checar se o aluno tem a disciplina:
+                  // Se o aluno não tem essa disciplina na planilha, pula
                   if (!currentStudent.grades[subject]) return null;
-
+                  
                   const g = currentStudent.grades[subject];
-                  const d1 = formatGrade(g.etapa1, false);
-                  const d2 = formatGrade(g.etapa2, false);
-                  const d3 = formatGrade(g.etapa3, false);
-                  const mf = formatGrade(g.mf, true); // MF permite vermelho
+                  // Verifica se está marcada no filtro
+                  const isCalculated = selectedDisciplines.includes(subject);
+                  
+                  const d1 = formatGrade(g.etapa1, highlightStages);
+                  const d2 = formatGrade(g.etapa2, highlightStages); 
+                  const d3 = formatGrade(g.etapa3, highlightStages);
+                  
+                  const mf = formatGrade(g.mf, true); // Média sempre vermelha se baixa
+
+                  // Visual: Opacidade baixa se a matéria foi desmarcada no filtro
+                  const rowStyle = isCalculated 
+                    ? {} 
+                    : { opacity: 0.4, backgroundColor: '#f9f9f9', filter: 'grayscale(100%)' };
 
                   return (
-                    <tr key={subject}>
-                      <td>{subject}</td>
+                    <tr key={subject} style={rowStyle}>
+                      <td style={{textAlign: 'left', fontWeight: 'bold'}}>
+                          {subject} 
+                          {!isCalculated && <span style={{fontSize:'0.7em', fontWeight:'normal', marginLeft:'5px'}}>(Ignorada)</span>}
+                      </td>
                       <td className={d1.className}>{d1.value}</td>
                       <td className={d2.className}>{d2.value}</td>
                       <td className={d3.className}>{d3.value}</td>
@@ -338,7 +364,6 @@ function App() {
           </div>
         )}
 
-        {/* PAGINAÇÃO */}
         {filteredStudents.length > 0 && (
           <div className="pagination">
             <button
@@ -360,19 +385,11 @@ function App() {
         )}
       </div>
 
-      {/* CONTROLES / RODAPÉ FIXO */}
       <div className="controls">
         <div className="filter-section">
-          {/* Input de Arquivo (NOVIDADE) */}
           <div className="file-upload-wrapper">
-            <label style={{ fontSize: "0.8em", fontWeight: "bold" }}>
-              Carregar Planilha:
-            </label>
-            <input
-              type="file"
-              accept=".xlsx, .xls, .csv"
-              onChange={handleFileUpload}
-            />
+            <label style={{ fontSize: "0.8em", fontWeight: "bold" }}>Arquivo:</label>
+            <input type="file" accept=".xlsx, .xls, .csv" onChange={handleFileUpload} />
           </div>
 
           <div className="filter-group">
@@ -382,13 +399,43 @@ function App() {
               onChange={(e) => setSelectedTurma(e.target.value)}
               disabled={allStudents.length === 0}
             >
-              <option value="todas">Todas as Turmas</option>
+              <option value="todas">Todas</option>
               {turmas.map((t) => (
-                <option key={t} value={t}>
-                  {t}
-                </option>
+                <option key={t} value={t}>{t}</option>
               ))}
             </select>
+          </div>
+
+          <div className="filter-group">
+            <label>Disciplinas:</label>
+            <div className="discipline-filter">
+              <button
+                onClick={() => setDisciplineFilterOpen(!disciplineFilterOpen)}
+                disabled={allStudents.length === 0}
+                className="discipline-filter-button"
+              >
+                Selecionar ({selectedDisciplines.length})
+              </button>
+              
+              {disciplineFilterOpen && (
+                <div className="discipline-dropdown">
+                  <div style={{display:'flex', gap:'5px', padding:'5px', borderBottom:'1px solid #ddd', marginBottom:'5px'}}>
+                      <button onClick={selectAllDisciplines} style={{fontSize:'0.7em', padding:'4px'}}>Todas</button>
+                      <button onClick={deselectAllDisciplines} style={{fontSize:'0.7em', padding:'4px'}}>Nenhuma</button>
+                  </div>
+                  {disciplinesOrder.map((d) => (
+                    <label key={d} className="discipline-item">
+                      <input
+                        type="checkbox"
+                        checked={selectedDisciplines.includes(d)}
+                        onChange={() => handleDisciplineSelection(d)}
+                      />
+                      {d}
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
 
           <div className="filter-group">
@@ -401,22 +448,24 @@ function App() {
             />
           </div>
 
-          <button
-            className="btn-green"
-            onClick={() => {
-              /* No React, o filtro é automático via useEffect, mas mantemos o botão visualmente ou para refresh manual se quisesse */
-            }}
-            disabled={loading || allStudents.length === 0}
-          >
-            {loading ? "Carregando..." : "Alunos Filtrados"}
-          </button>
-
-          <button
+          <div className="filter-group" style={{marginLeft: '10px'}}>
+             <label style={{cursor:'pointer', display:'flex', alignItems:'center', fontSize:'0.9em'}}>
+                <input 
+                    type="checkbox" 
+                    checked={highlightStages}
+                    onChange={(e) => setHighlightStages(e.target.checked)}
+                    style={{width:'auto', marginRight:'5px'}}
+                />
+                Destacar Etapas
+             </label>
+          </div>
+          
+           <button
             className="btn-blue"
             onClick={toggleDisciplineOrder}
             disabled={allStudents.length === 0}
           >
-            Inverter Ordem &#8645;
+            Inverter Ordem
           </button>
         </div>
 
@@ -425,18 +474,11 @@ function App() {
         </button>
       </div>
 
-      {/* MODAL DE FOTO */}
       {modalOpen && (
-        <div
-          className="modal-overlay"
-          onClick={(e) => {
-            if (e.target.className.includes("modal-overlay"))
-              setModalOpen(false);
-          }}
-        >
-          <span className="modal-close" onClick={() => setModalOpen(false)}>
-            &times;
-          </span>
+        <div className="modal-overlay" onClick={(e) => {
+            if (e.target.className.includes("modal-overlay")) setModalOpen(false);
+          }}>
+          <span className="modal-close" onClick={() => setModalOpen(false)}>&times;</span>
           <img
             className={`modal-content ${isZoomed ? "zoomed" : ""}`}
             src={modalImgSrc}
