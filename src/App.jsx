@@ -313,8 +313,9 @@ function App() {
           <div className="info-message" style={{ marginTop: "50px" }}>
             <h3>Bem-vindo ao Visualizador</h3>
             <p>
-              Por favor, carregue a planilha baixada do Unimestre (.xlsx ou .csv)
-              abaixo para começar.
+              Por favor, carregue a planilha baixada do Unimestre (.xlsx ou
+              .csv) abaixo para começar. O relatório é o{" "}
+              <b>Mapa de Notas por Etapa.</b>
             </p>
           </div>
         )}
