@@ -15,9 +15,9 @@ function App() {
   const [mediaCorte, setMediaCorte] = useState(6.0);
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
-  
+
   // Filtros
-  const [selectedDisciplines, setSelectedDisciplines] = useState([]); 
+  const [selectedDisciplines, setSelectedDisciplines] = useState([]);
   const [disciplineFilterOpen, setDisciplineFilterOpen] = useState(false);
   const [highlightStages, setHighlightStages] = useState(false);
 
@@ -65,16 +65,24 @@ function App() {
     const COL_NOME = headers.indexOf("nm_pessoa");
     const COL_FOTO = headers.indexOf("ds_link_foto");
     const COL_DISCIPLINA = headers.indexOf("disciplina");
-    
+
     // Mapeia colunas de notas
-    const COL_NOTA1 = headers.indexOf("nota_d1") > -1 ? headers.indexOf("nota_d1") : headers.indexOf("nota"); 
-    const COL_NOTA2 = headers.indexOf("nota_d2") > -1 ? headers.indexOf("nota_d2") : headers.indexOf("rec"); 
-    const COL_NOTA3 = headers.indexOf("nota_d3"); 
-    
+    const COL_NOTA1 =
+      headers.indexOf("nota_d1") > -1
+        ? headers.indexOf("nota_d1")
+        : headers.indexOf("nota");
+    const COL_NOTA2 =
+      headers.indexOf("nota_d2") > -1
+        ? headers.indexOf("nota_d2")
+        : headers.indexOf("rec");
+    const COL_NOTA3 = headers.indexOf("nota_d3");
+
     let COL_MF = headers.indexOf("media");
     if (COL_MF === -1) COL_MF = headers.indexOf("mediafinal");
-    
-    const COL_TURMA = headers.findIndex(h => h === "ds_turma" || h === "turma");
+
+    const COL_TURMA = headers.findIndex(
+      (h) => h === "ds_turma" || h === "turma"
+    );
 
     if (COL_ALUNO_ID === -1 || COL_NOME === -1 || COL_MF === -1) {
       setErrorMsg("Faltando colunas: cd_aluno, nm_pessoa, media.");
@@ -91,19 +99,21 @@ function App() {
       if (!row[COL_ALUNO_ID]) continue;
 
       const studentId = String(row[COL_ALUNO_ID]).trim();
-      const turmaName = COL_TURMA > -1 ? String(row[COL_TURMA] || "Geral").trim() : "Geral";
+      const turmaName =
+        COL_TURMA > -1 ? String(row[COL_TURMA] || "Geral").trim() : "Geral";
       if (turmaName) turmasSet.add(turmaName);
 
       if (!studentsMap[studentId]) {
         // --- LÓGICA DA FOTO (CORRIGIDA) ---
-        let thumbUrl = (COL_FOTO > -1 && row[COL_FOTO]) ? String(row[COL_FOTO]).trim() : "";
+        let thumbUrl =
+          COL_FOTO > -1 && row[COL_FOTO] ? String(row[COL_FOTO]).trim() : "";
         let fullUrl = thumbUrl;
-        
+
         // Se a URL tiver parametros de tamanho, substituímos para alta resolução
         if (thumbUrl.includes("width=")) {
-             fullUrl = thumbUrl
-              .replace(/&width=\d+/i, "&width=600")
-              .replace(/&height=\d+/i, "&height=875");
+          fullUrl = thumbUrl
+            .replace(/&width=\d+/i, "&width=600")
+            .replace(/&height=\d+/i, "&height=875");
         }
 
         studentsMap[studentId] = {
@@ -116,8 +126,9 @@ function App() {
         };
       }
 
-      let disciplina = COL_DISCIPLINA > -1 ? String(row[COL_DISCIPLINA] || "").trim() : "";
-      disciplina = disciplina.replace(/^"|"$/g, '');
+      let disciplina =
+        COL_DISCIPLINA > -1 ? String(row[COL_DISCIPLINA] || "").trim() : "";
+      disciplina = disciplina.replace(/^"|"$/g, "");
       let disciplinaKey = disciplina.toUpperCase();
 
       if (!disciplinaKey || disciplinaKey === "---") continue;
@@ -138,12 +149,12 @@ function App() {
 
     // --- SELEÇÃO INTELIGENTE (RESOLVE O PROBLEMA DA ALICE) ---
     // Removemos automaticamente da seleção inicial as matérias que não usam nota numérica
-    const ignoreList = ["EDF", "PV", "SOESP", "ART.P"]; 
-    
+    const ignoreList = ["EDF", "PV", "SOESP", "ART.P"];
+
     const initialSelected = discOrderTemp.filter(
-      (d) => !ignoreList.some(ignored => d.includes(ignored))
+      (d) => !ignoreList.some((ignored) => d.includes(ignored))
     );
-    
+
     setSelectedDisciplines(initialSelected);
     setTurmas(Array.from(turmasSet).sort());
     setAllStudents(Object.values(studentsMap));
@@ -167,7 +178,7 @@ function App() {
     // 2. Filtro de Notas (O coração da lógica)
     temp = temp.filter((student) => {
       if (!student.grades) return false;
-      
+
       // O aluno só aparece se tiver ALGUMA nota vermelha ou falta de nota
       // APENAS nas disciplinas selecionadas.
       return selectedDisciplines.some((subject) => {
@@ -176,16 +187,16 @@ function App() {
 
         // Se a disciplina foi selecionada mas o aluno não tem registro nela
         // Consideramos pendência (mas como removemos EDF/PV da seleção, isso não afeta Alice)
-        if (!gradeInfo) return true; 
+        if (!gradeInfo) return true;
 
         const mfStr = String(gradeInfo.mf).replace(",", ".").trim();
         const mf = parseFloat(mfStr);
 
         // Se a nota final for vazia, inválida ou MENOR que o corte -> MOSTRA O ALUNO
         if (mfStr === "---" || mfStr === "" || isNaN(mf) || mf < mediaCorte) {
-           return true;
+          return true;
         }
-        
+
         // Se a nota for >= mediaCorte, retorna false (não mostra por causa dessa matéria)
         return false;
       });
@@ -198,8 +209,9 @@ function App() {
 
   // --- FORMATAÇÃO DE NOTAS ---
   const formatGrade = (value, applyRedClass) => {
-    if (value === undefined || value === null) return { value: "-", className: "grade-blank" };
-    
+    if (value === undefined || value === null)
+      return { value: "-", className: "grade-blank" };
+
     const str = String(value).replace(",", ".").trim();
     const num = parseFloat(str);
 
@@ -237,30 +249,41 @@ function App() {
   // --- CALCULO DO STATUS (RECUPERAÇÃO vs CONSELHO) ---
   const currentStudent = filteredStudents[currentIndex];
   let statusBoxHtml = null;
-  
+
   if (currentStudent) {
     let belowAverageCount = 0;
-    
+
     // Conta quantas matérias ruins o aluno tem (baseado APENAS nas selecionadas)
     selectedDisciplines.forEach((subject) => {
-        const key = subject.toUpperCase();
-        const g = currentStudent.grades[key];
-        
-        if(!g) { belowAverageCount++; return; }
-        
-        const str = String(g.mf).replace(",", ".").trim();
-        const num = parseFloat(str);
-        
-        if (str === "" || isNaN(num) || num < mediaCorte) {
-            belowAverageCount++;
-        }
+      const key = subject.toUpperCase();
+      const g = currentStudent.grades[key];
+
+      if (!g) {
+        belowAverageCount++;
+        return;
+      }
+
+      const str = String(g.mf).replace(",", ".").trim();
+      const num = parseFloat(str);
+
+      if (str === "" || isNaN(num) || num < mediaCorte) {
+        belowAverageCount++;
+      }
     });
 
     if (belowAverageCount > 0) {
       if (belowAverageCount >= 5) {
-        statusBoxHtml = <span className="status-box red">Recuperação ({belowAverageCount})</span>;
+        statusBoxHtml = (
+          <span className="status-box red">
+            Recuperação ({belowAverageCount})
+          </span>
+        );
       } else {
-        statusBoxHtml = <span className="status-box green">Apto para conselho ({belowAverageCount})</span>;
+        statusBoxHtml = (
+          <span className="status-box green">
+            Apto para conselho ({belowAverageCount})
+          </span>
+        );
       }
     }
   }
@@ -277,15 +300,22 @@ function App() {
         {loading && <div className="info-message">Processando planilha...</div>}
         {errorMsg && <div className="error-message">{errorMsg}</div>}
 
-        {!loading && filteredStudents.length === 0 && allStudents.length > 0 && (
+        {!loading &&
+          filteredStudents.length === 0 &&
+          allStudents.length > 0 && (
             <div className="info-message">
-                Nenhum aluno encontrado com pendências nas disciplinas selecionadas.
+              Nenhum aluno encontrado com pendências nas disciplinas
+              selecionadas.
             </div>
-        )}
+          )}
 
         {!loading && allStudents.length === 0 && !errorMsg && (
           <div className="info-message" style={{ marginTop: "50px" }}>
-            <h3>Carregue a planilha para iniciar</h3>
+            <h3>Bem-vindo ao Visualizador</h3>
+            <p>
+              Por favor, carregue a planilha (.xlsx ou .csv) abaixo para
+              começar.
+            </p>
           </div>
         )}
 
@@ -293,26 +323,37 @@ function App() {
           <div id="studentCard">
             <div className="student-info">
               <img
-                src={currentStudent.photoUrl || "https://via.placeholder.com/100?text=Foto"}
+                src={
+                  currentStudent.photoUrl ||
+                  "https://via.placeholder.com/100?text=Foto"
+                }
                 alt={`Foto de ${currentStudent.name}`}
-                onError={(e) => { e.target.onerror = null; e.target.src = "https://via.placeholder.com/100?text=Sem+Foto"; }}
+                onError={(e) => {
+                  e.target.onerror = null;
+                  e.target.src =
+                    "https://via.placeholder.com/100?text=Sem+Foto";
+                }}
                 onClick={() => {
-                  setModalImgSrc(currentStudent.fullPhotoUrl || currentStudent.photoUrl);
+                  setModalImgSrc(
+                    currentStudent.fullPhotoUrl || currentStudent.photoUrl
+                  );
                   setModalOpen(true);
                   setIsZoomed(false);
                 }}
-                style={{cursor: 'pointer'}} 
+                style={{ cursor: "pointer" }}
               />
-              <div style={{width:'100%'}}>
-                  <div style={{display:'flex', justifyContent:'space-between'}}>
-                      <h2 style={{margin:0}}>
-                        {currentStudent.name} {statusBoxHtml}
-                      </h2>
-                      {/* Pequeno contador de posicao */}
-                      <span style={{color:'#777', fontSize:'0.9em'}}>
-                        {currentIndex + 1} / {filteredStudents.length}
-                      </span>
-                  </div>
+              <div style={{ width: "100%" }}>
+                <div
+                  style={{ display: "flex", justifyContent: "space-between" }}
+                >
+                  <h2 style={{ margin: 0 }}>
+                    {currentStudent.name} {statusBoxHtml}
+                  </h2>
+                  {/* Pequeno contador de posicao */}
+                  <span style={{ color: "#777", fontSize: "0.9em" }}>
+                    {currentIndex + 1} / {filteredStudents.length}
+                  </span>
+                </div>
               </div>
             </div>
 
@@ -330,27 +371,41 @@ function App() {
                 {disciplinesOrder.map((subject) => {
                   // Se o aluno não tem essa disciplina na planilha, pula
                   if (!currentStudent.grades[subject]) return null;
-                  
+
                   const g = currentStudent.grades[subject];
                   // Verifica se está marcada no filtro
                   const isCalculated = selectedDisciplines.includes(subject);
-                  
+
                   const d1 = formatGrade(g.etapa1, highlightStages);
-                  const d2 = formatGrade(g.etapa2, highlightStages); 
+                  const d2 = formatGrade(g.etapa2, highlightStages);
                   const d3 = formatGrade(g.etapa3, highlightStages);
-                  
+
                   const mf = formatGrade(g.mf, true); // Média sempre vermelha se baixa
 
                   // Visual: Opacidade baixa se a matéria foi desmarcada no filtro
-                  const rowStyle = isCalculated 
-                    ? {} 
-                    : { opacity: 0.4, backgroundColor: '#f9f9f9', filter: 'grayscale(100%)' };
+                  const rowStyle = isCalculated
+                    ? {}
+                    : {
+                        opacity: 0.4,
+                        backgroundColor: "#f9f9f9",
+                        filter: "grayscale(100%)",
+                      };
 
                   return (
                     <tr key={subject} style={rowStyle}>
-                      <td style={{textAlign: 'left', fontWeight: 'bold'}}>
-                          {subject} 
-                          {!isCalculated && <span style={{fontSize:'0.7em', fontWeight:'normal', marginLeft:'5px'}}>(Ignorada)</span>}
+                      <td style={{ textAlign: "left", fontWeight: "bold" }}>
+                        {subject}
+                        {!isCalculated && (
+                          <span
+                            style={{
+                              fontSize: "0.7em",
+                              fontWeight: "normal",
+                              marginLeft: "5px",
+                            }}
+                          >
+                            (Ignorada)
+                          </span>
+                        )}
                       </td>
                       <td className={d1.className}>{d1.value}</td>
                       <td className={d2.className}>{d2.value}</td>
@@ -388,8 +443,14 @@ function App() {
       <div className="controls">
         <div className="filter-section">
           <div className="file-upload-wrapper">
-            <label style={{ fontSize: "0.8em", fontWeight: "bold" }}>Arquivo:</label>
-            <input type="file" accept=".xlsx, .xls, .csv" onChange={handleFileUpload} />
+            <label style={{ fontSize: "0.8em", fontWeight: "bold" }}>
+              Arquivo:
+            </label>
+            <input
+              type="file"
+              accept=".xlsx, .xls, .csv"
+              onChange={handleFileUpload}
+            />
           </div>
 
           <div className="filter-group">
@@ -401,7 +462,9 @@ function App() {
             >
               <option value="todas">Todas</option>
               {turmas.map((t) => (
-                <option key={t} value={t}>{t}</option>
+                <option key={t} value={t}>
+                  {t}
+                </option>
               ))}
             </select>
           </div>
@@ -416,12 +479,30 @@ function App() {
               >
                 Selecionar ({selectedDisciplines.length})
               </button>
-              
+
               {disciplineFilterOpen && (
                 <div className="discipline-dropdown">
-                  <div style={{display:'flex', gap:'5px', padding:'5px', borderBottom:'1px solid #ddd', marginBottom:'5px'}}>
-                      <button onClick={selectAllDisciplines} style={{fontSize:'0.7em', padding:'4px'}}>Todas</button>
-                      <button onClick={deselectAllDisciplines} style={{fontSize:'0.7em', padding:'4px'}}>Nenhuma</button>
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: "5px",
+                      padding: "5px",
+                      borderBottom: "1px solid #ddd",
+                      marginBottom: "5px",
+                    }}
+                  >
+                    <button
+                      onClick={selectAllDisciplines}
+                      style={{ fontSize: "0.7em", padding: "4px" }}
+                    >
+                      Todas
+                    </button>
+                    <button
+                      onClick={deselectAllDisciplines}
+                      style={{ fontSize: "0.7em", padding: "4px" }}
+                    >
+                      Nenhuma
+                    </button>
                   </div>
                   {disciplinesOrder.map((d) => (
                     <label key={d} className="discipline-item">
@@ -448,19 +529,26 @@ function App() {
             />
           </div>
 
-          <div className="filter-group" style={{marginLeft: '10px'}}>
-             <label style={{cursor:'pointer', display:'flex', alignItems:'center', fontSize:'0.9em'}}>
-                <input 
-                    type="checkbox" 
-                    checked={highlightStages}
-                    onChange={(e) => setHighlightStages(e.target.checked)}
-                    style={{width:'auto', marginRight:'5px'}}
-                />
-                Destacar Etapas
-             </label>
+          <div className="filter-group" style={{ marginLeft: "10px" }}>
+            <label
+              style={{
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                fontSize: "0.9em",
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={highlightStages}
+                onChange={(e) => setHighlightStages(e.target.checked)}
+                style={{ width: "auto", marginRight: "5px" }}
+              />
+              Destacar Etapas
+            </label>
           </div>
-          
-           <button
+
+          <button
             className="btn-blue"
             onClick={toggleDisciplineOrder}
             disabled={allStudents.length === 0}
@@ -475,10 +563,16 @@ function App() {
       </div>
 
       {modalOpen && (
-        <div className="modal-overlay" onClick={(e) => {
-            if (e.target.className.includes("modal-overlay")) setModalOpen(false);
-          }}>
-          <span className="modal-close" onClick={() => setModalOpen(false)}>&times;</span>
+        <div
+          className="modal-overlay"
+          onClick={(e) => {
+            if (e.target.className.includes("modal-overlay"))
+              setModalOpen(false);
+          }}
+        >
+          <span className="modal-close" onClick={() => setModalOpen(false)}>
+            &times;
+          </span>
           <img
             className={`modal-content ${isZoomed ? "zoomed" : ""}`}
             src={modalImgSrc}
