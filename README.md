@@ -12,7 +12,7 @@
 ## 🖼️ Visualização do Projeto
 
 <div align="center">
-  <img src="image_7b6638.png" alt="Tela Inicial do Conselho de Classe" width="800px" />
+  <img src="src/assets/Captura de tela 2025-11-22 101401.png" alt="Tela Inicial do Conselho de Classe" width="800px" />
 </div>
 
 ### 🔗 [Acesse o Projeto Online (Demo)](https://telaconselhodeclasse.netlify.app/)
