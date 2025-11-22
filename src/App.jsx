@@ -245,7 +245,7 @@ function App() {
       {/* HEADER */}
       <img
         id="headerImage"
-        src="https://www.redeinspiraeducadores.com.br/wp-content/uploads/2009/05/logo_inspira.png"
+        src="/src/assets/header-img.png"
         alt="Cabeçalho Relatório"
       />
 
