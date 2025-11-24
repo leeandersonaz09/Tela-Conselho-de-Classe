@@ -292,7 +292,7 @@ function App() {
     <div className="app-container">
       <img
         id="headerImage"
-        src="https://raw.githubusercontent.com/leeandersonaz09/Tela-Conselho-de-Classe/refs/heads/main/src/assets/header-img.png"
+        src="https://i.ibb.co/9kWW0n20/header-img.png"
         alt="Cabeçalho Relatório"
       />
 
