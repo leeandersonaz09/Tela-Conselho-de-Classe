@@ -15,6 +15,12 @@ function App() {
   const [mediaCorte, setMediaCorte] = useState(6.0);
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
+  const [isSimpleFormat, setIsSimpleFormat] = useState(false);
+  const [showStages, setShowStages] = useState(true);
+
+  // NOVOS ESTADOS para controlar a visibilidade das colunas de nota final
+  const [showExameFinal, setShowExameFinal] = useState(true);
+  const [showMediaFinal, setShowMediaFinal] = useState(true);
 
   // Filtros
   const [selectedDisciplines, setSelectedDisciplines] = useState([]);
@@ -26,6 +32,23 @@ function App() {
   const [modalImgSrc, setModalImgSrc] = useState("");
   const [isZoomed, setIsZoomed] = useState(false);
 
+  // --- HANDLERS DRAG AND DROP ---
+  const handleDragOver = (e) => {
+    e.preventDefault();
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const files = e.dataTransfer.files;
+
+    if (files && files.length > 0) {
+      handleFileUpload({ target: { files: files } });
+    }
+  };
+
+  // --- HANDLER DE ARQUIVO UNIFICADO ---
   const handleFileUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -33,6 +56,11 @@ function App() {
     setLoading(true);
     setErrorMsg("");
     setAllStudents([]);
+    // Resetar estados de exibição ao carregar novo arquivo
+    setIsSimpleFormat(false);
+    setShowStages(true);
+
+    // NOTA: showExameFinal/showMediaFinal serão definidos em processData
 
     const reader = new FileReader();
     reader.onload = (evt) => {
@@ -66,29 +94,44 @@ function App() {
     const COL_FOTO = headers.indexOf("ds_link_foto");
     const COL_DISCIPLINA = headers.indexOf("disciplina");
 
-    // Mapeia colunas de notas
-    const COL_NOTA1 =
-      headers.indexOf("nota_d1") > -1
-        ? headers.indexOf("nota_d1")
-        : headers.indexOf("nota");
-    const COL_NOTA2 =
-      headers.indexOf("nota_d2") > -1
-        ? headers.indexOf("nota_d2")
-        : headers.indexOf("rec");
-    const COL_NOTA3 = headers.indexOf("nota_d3");
+    // Mapeia colunas de notas de etapa
+    const COL_ETAPA1 = headers.indexOf("nota_d1");
+    const COL_ETAPA2 = headers.indexOf("nota_d2");
+    const COL_ETAPA3 = headers.indexOf("nota_d3");
 
-    let COL_MF = headers.indexOf("media");
-    if (COL_MF === -1) COL_MF = headers.indexOf("mediafinal");
+    // Retrocompatibilidade para notas de etapas antigas
+    const COL_NOTA1 = COL_ETAPA1 > -1 ? COL_ETAPA1 : headers.indexOf("nota");
+    const COL_NOTA2 = COL_ETAPA2 > -1 ? COL_ETAPA2 : headers.indexOf("rec");
+    const COL_NOTA3 = COL_ETAPA3;
+
+    // Mapeamos TODAS as colunas de nota final disponíveis
+    const COL_MEDIA = headers.indexOf("media");
+    const COL_MEDIA_FINAL = headers.indexOf("mediafinal");
+    const COL_EXAME_FINAL = headers.indexOf("notaexame");
 
     const COL_TURMA = headers.findIndex(
       (h) => h === "ds_turma" || h === "turma"
     );
 
-    if (COL_ALUNO_ID === -1 || COL_NOME === -1 || COL_MF === -1) {
-      setErrorMsg("Faltando colunas: cd_aluno, nm_pessoa, media.");
+    if (COL_ALUNO_ID === -1 || COL_NOME === -1) {
+      setErrorMsg("Faltando colunas essenciais: cd_aluno, nm_pessoa.");
       setLoading(false);
       return;
     }
+
+    // --- LÓGICA DE DETECÇÃO DO FORMATO SIMPLES/EF ---
+    const isSimple =
+      COL_ETAPA1 === -1 && COL_ETAPA2 === -1 && COL_ETAPA3 === -1;
+    setIsSimpleFormat(isSimple);
+
+    // Definição do estado inicial de exibição das colunas:
+    // 1. Mostrar/Esconder Etapas: Automático
+    setShowStages(!isSimple);
+
+    // 2. Mostrar/Esconder Notas Finais: Define o estado inicial para refletir o conteúdo da planilha
+    // Se a planilha tiver a coluna, mostramos ela por padrão.
+    setShowExameFinal(COL_EXAME_FINAL > -1);
+    setShowMediaFinal(COL_MEDIA > -1 || COL_MEDIA_FINAL > -1);
 
     const studentsMap = {};
     const discOrderTemp = [];
@@ -104,12 +147,11 @@ function App() {
       if (turmaName) turmasSet.add(turmaName);
 
       if (!studentsMap[studentId]) {
-        // --- LÓGICA DA FOTO (CORRIGIDA) ---
+        // --- LÓGICA DA FOTO ---
         let thumbUrl =
           COL_FOTO > -1 && row[COL_FOTO] ? String(row[COL_FOTO]).trim() : "";
         let fullUrl = thumbUrl;
 
-        // Se a URL tiver parametros de tamanho, substituímos para alta resolução
         if (thumbUrl.includes("width=")) {
           fullUrl = thumbUrl
             .replace(/&width=\d+/i, "&width=600")
@@ -137,18 +179,29 @@ function App() {
         discOrderTemp.push(disciplinaKey);
       }
 
+      // Encontra a MF Original (prioriza media, depois mediafinal)
+      let mfOriginalValue =
+        COL_MEDIA > -1
+          ? row[COL_MEDIA]
+          : COL_MEDIA_FINAL > -1
+          ? row[COL_MEDIA_FINAL]
+          : "";
+
       studentsMap[studentId].grades[disciplinaKey] = {
         etapa1: COL_NOTA1 > -1 ? row[COL_NOTA1] : "",
         etapa2: COL_NOTA2 > -1 ? row[COL_NOTA2] : "",
         etapa3: COL_NOTA3 > -1 ? row[COL_NOTA3] : "",
-        mf: row[COL_MF],
+        // Armazena as duas notas finais separadamente
+        mf_original: mfOriginalValue,
+        mf_exame: COL_EXAME_FINAL > -1 ? row[COL_EXAME_FINAL] : "",
+        // Define a nota principal (mf) que será usada para FILTRAGEM e STATUS (usamos a nota visível)
+        mf: COL_EXAME_FINAL > -1 ? row[COL_EXAME_FINAL] : mfOriginalValue,
       };
     }
 
     setDisciplinesOrder(discOrderTemp);
 
-    // --- SELEÇÃO INTELIGENTE (RESOLVE O PROBLEMA DA ALICE) ---
-    // Removemos automaticamente da seleção inicial as matérias que não usam nota numérica
+    // --- SELEÇÃO INTELIGENTE ---
     const ignoreList = ["EDF", "PV", "SOESP", "ART.P"];
 
     const initialSelected = discOrderTemp.filter(
@@ -175,29 +228,38 @@ function App() {
       temp = temp.filter((s) => s.turma === selectedTurma);
     }
 
-    // 2. Filtro de Notas (O coração da lógica)
+    // 2. Filtro de Notas
     temp = temp.filter((student) => {
       if (!student.grades) return false;
 
       // O aluno só aparece se tiver ALGUMA nota vermelha ou falta de nota
-      // APENAS nas disciplinas selecionadas.
       return selectedDisciplines.some((subject) => {
         const subjectKey = subject.toUpperCase();
         const gradeInfo = student.grades[subjectKey];
 
-        // Se a disciplina foi selecionada mas o aluno não tem registro nela
-        // Consideramos pendência (mas como removemos EDF/PV da seleção, isso não afeta Alice)
         if (!gradeInfo) return true;
 
-        const mfStr = String(gradeInfo.mf).replace(",", ".").trim();
+        let gradeToCheck = null;
+
+        // PRIORIDADE PARA FILTRAGEM:
+        // 1. Tenta Exame Final, se estiver visível
+        if (showExameFinal) {
+          gradeToCheck = gradeInfo.mf_exame;
+        } else if (showMediaFinal) {
+          // 2. Tenta Média Final Original, se estiver visível
+          gradeToCheck = gradeInfo.mf_original;
+        }
+
+        if (gradeToCheck === null) return false; // Nenhuma coluna de nota final está visível
+
+        const mfStr = String(gradeToCheck).replace(",", ".").trim();
         const mf = parseFloat(mfStr);
 
-        // Se a nota final for vazia, inválida ou MENOR que o corte -> MOSTRA O ALUNO
+        // Se a nota for vazia, inválida ou MENOR que o corte -> MOSTRA O ALUNO
         if (mfStr === "---" || mfStr === "" || isNaN(mf) || mf < mediaCorte) {
           return true;
         }
 
-        // Se a nota for >= mediaCorte, retorna false (não mostra por causa dessa matéria)
         return false;
       });
     });
@@ -205,7 +267,14 @@ function App() {
     temp.sort((a, b) => a.name.localeCompare(b.name));
     setFilteredStudents(temp);
     setCurrentIndex(0);
-  }, [allStudents, selectedTurma, mediaCorte, selectedDisciplines]);
+  }, [
+    allStudents,
+    selectedTurma,
+    mediaCorte,
+    selectedDisciplines,
+    showExameFinal,
+    showMediaFinal,
+  ]); // NOVAS DEPENDÊNCIAS
 
   // --- FORMATAÇÃO DE NOTAS ---
   const formatGrade = (value, applyRedClass) => {
@@ -253,7 +322,6 @@ function App() {
   if (currentStudent) {
     let belowAverageCount = 0;
 
-    // Conta quantas matérias ruins o aluno tem (baseado APENAS nas selecionadas)
     selectedDisciplines.forEach((subject) => {
       const key = subject.toUpperCase();
       const g = currentStudent.grades[key];
@@ -263,7 +331,17 @@ function App() {
         return;
       }
 
-      const str = String(g.mf).replace(",", ".").trim();
+      // Usa a mesma lógica de prioridade para o status box
+      let gradeToCheck = null;
+      if (showExameFinal) {
+        gradeToCheck = g.mf_exame;
+      } else if (showMediaFinal) {
+        gradeToCheck = g.mf_original;
+      }
+
+      if (gradeToCheck === null) return;
+
+      const str = String(gradeToCheck).replace(",", ".").trim();
       const num = parseFloat(str);
 
       if (str === "" || isNaN(num) || num < mediaCorte) {
@@ -289,7 +367,11 @@ function App() {
   }
 
   return (
-    <div className="app-container">
+    <div
+      className="app-container"
+      onDragOver={handleDragOver}
+      onDrop={handleDrop}
+    >
       <img
         id="headerImage"
         src="https://i.ibb.co/9kWW0n20/header-img.png"
@@ -314,8 +396,8 @@ function App() {
             <h3>Bem-vindo ao Visualizador</h3>
             <p>
               Por favor, carregue a planilha baixada do Unimestre (.xlsx ou
-              .csv) abaixo para começar. O relatório é o{" "}
-              <b>Mapa de Notas por Etapa.</b>
+              .csv) abaixo ou **ARRASTE** o arquivo para esta área. O relatório
+              é o <b>Mapa de Notas por Etapa.</b>
             </p>
           </div>
         )}
@@ -362,26 +444,29 @@ function App() {
               <thead>
                 <tr>
                   <th>Disciplina</th>
-                  <th>Etapa 1</th>
-                  <th>Etapa 2</th>
-                  <th>Etapa 3</th>
-                  <th>Média Final</th>
+                  {/* CABEÇALHO CONDICIONAL POR ETAPA */}
+                  {showStages && <th>Etapa 1</th>}
+                  {showStages && <th>Etapa 2</th>}
+                  {showStages && <th>Etapa 3</th>}
+                  {/* CABEÇALHO CONDICIONAL POR NOTA FINAL */}
+                  {showExameFinal && <th>Exame Final</th>}
+                  {showMediaFinal && <th>Média Final</th>}
                 </tr>
               </thead>
               <tbody>
                 {disciplinesOrder.map((subject) => {
-                  // Se o aluno não tem essa disciplina na planilha, pula
                   if (!currentStudent.grades[subject]) return null;
 
                   const g = currentStudent.grades[subject];
-                  // Verifica se está marcada no filtro
                   const isCalculated = selectedDisciplines.includes(subject);
 
                   const d1 = formatGrade(g.etapa1, highlightStages);
                   const d2 = formatGrade(g.etapa2, highlightStages);
                   const d3 = formatGrade(g.etapa3, highlightStages);
 
-                  const mf = formatGrade(g.mf, true); // Média sempre vermelha se baixa
+                  // Formata as duas colunas de nota final
+                  const mf_orig = formatGrade(g.mf_original, true);
+                  const mf_exam = formatGrade(g.mf_exame, true);
 
                   // Visual: Opacidade baixa se a matéria foi desmarcada no filtro
                   const rowStyle = isCalculated
@@ -408,10 +493,25 @@ function App() {
                           </span>
                         )}
                       </td>
-                      <td className={d1.className}>{d1.value}</td>
-                      <td className={d2.className}>{d2.value}</td>
-                      <td className={d3.className}>{d3.value}</td>
-                      <td className={mf.className}>{mf.value}</td>
+
+                      {/* CÉLULAS DE ETAPA (CONDICIONAIS) */}
+                      {showStages && (
+                        <td className={d1.className}>{d1.value}</td>
+                      )}
+                      {showStages && (
+                        <td className={d2.className}>{d2.value}</td>
+                      )}
+                      {showStages && (
+                        <td className={d3.className}>{d3.value}</td>
+                      )}
+
+                      {/* CÉLULAS DE NOTA FINAL (CONDICIONAIS) */}
+                      {showExameFinal && (
+                        <td className={mf_exam.className}>{mf_exam.value}</td>
+                      )}
+                      {showMediaFinal && (
+                        <td className={mf_orig.className}>{mf_orig.value}</td>
+                      )}
                     </tr>
                   );
                 })}
@@ -442,120 +542,169 @@ function App() {
       </div>
 
       <div className="controls">
+        {/* Usamos o layout de colunas no CSS externo para melhor visualização */}
         <div className="filter-section">
-          <div className="file-upload-wrapper">
-            <label style={{ fontSize: "0.8em", fontWeight: "bold" }}>
-              Arquivo:
-            </label>
-            <input
-              type="file"
-              accept=".xlsx, .xls, .csv"
-              onChange={handleFileUpload}
-            />
-          </div>
+          {/* COLUNA 1: DADOS E TURMAS */}
+          <div className="control-column">
+            <div className="file-upload-wrapper">
+              <label style={{ fontSize: "0.8em", fontWeight: "bold" }}>
+                Arquivo:
+              </label>
+              <input
+                type="file"
+                accept=".xlsx, .xls, .csv"
+                onChange={handleFileUpload}
+              />
+            </div>
 
-          <div className="filter-group">
-            <label>Turma:</label>
-            <select
-              value={selectedTurma}
-              onChange={(e) => setSelectedTurma(e.target.value)}
-              disabled={allStudents.length === 0}
-            >
-              <option value="todas">Todas</option>
-              {turmas.map((t) => (
-                <option key={t} value={t}>
-                  {t}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="filter-group">
-            <label>Disciplinas:</label>
-            <div className="discipline-filter">
-              <button
-                onClick={() => setDisciplineFilterOpen(!disciplineFilterOpen)}
+            <div className="filter-group">
+              <label>Turma:</label>
+              <select
+                value={selectedTurma}
+                onChange={(e) => setSelectedTurma(e.target.value)}
                 disabled={allStudents.length === 0}
-                className="discipline-filter-button"
               >
-                Selecionar ({selectedDisciplines.length})
-              </button>
+                <option value="todas">Todas</option>
+                {turmas.map((t) => (
+                  <option key={t} value={t}>
+                    {t}
+                  </option>
+                ))}
+              </select>
+            </div>
 
-              {disciplineFilterOpen && (
-                <div className="discipline-dropdown">
-                  <div
-                    style={{
-                      display: "flex",
-                      gap: "5px",
-                      padding: "5px",
-                      borderBottom: "1px solid #ddd",
-                      marginBottom: "5px",
-                    }}
-                  >
-                    <button
-                      onClick={selectAllDisciplines}
-                      style={{ fontSize: "0.7em", padding: "4px" }}
-                    >
-                      Todas
-                    </button>
-                    <button
-                      onClick={deselectAllDisciplines}
-                      style={{ fontSize: "0.7em", padding: "4px" }}
-                    >
-                      Nenhuma
-                    </button>
-                  </div>
-                  {disciplinesOrder.map((d) => (
-                    <label key={d} className="discipline-item">
-                      <input
-                        type="checkbox"
-                        checked={selectedDisciplines.includes(d)}
-                        onChange={() => handleDisciplineSelection(d)}
-                      />
-                      {d}
-                    </label>
-                  ))}
-                </div>
-              )}
+            <button
+              className="btn-blue"
+              onClick={toggleDisciplineOrder}
+              disabled={allStudents.length === 0}
+              style={{ marginTop: "10px" }}
+            >
+              Inverter Ordem
+            </button>
+          </div>
+
+          {/* COLUNA 2: FILTROS DE NOTA E EXIBIÇÃO */}
+          <div className="control-column">
+            <div className="filter-group">
+              <label>Média Corte:</label>
+              <input
+                type="number"
+                value={mediaCorte}
+                step="0.1"
+                onChange={(e) => setMediaCorte(parseFloat(e.target.value))}
+                style={{ maxWidth: "60px" }}
+              />
+            </div>
+
+            {/* CHECKBOX: MOSTRAR EXAME FINAL */}
+            <div className="filter-group">
+              <label style={{ cursor: "pointer", fontWeight: "bold" }}>
+                <input
+                  type="checkbox"
+                  checked={showExameFinal}
+                  onChange={(e) => setShowExameFinal(e.target.checked)}
+                  style={{ width: "auto", marginRight: "5px" }}
+                  disabled={allStudents.length === 0}
+                />
+                Mostrar Exame Final
+              </label>
+            </div>
+
+            {/* CHECKBOX: MOSTRAR MÉDIA FINAL */}
+            <div className="filter-group">
+              <label style={{ cursor: "pointer", fontWeight: "bold" }}>
+                <input
+                  type="checkbox"
+                  checked={showMediaFinal}
+                  onChange={(e) => setShowMediaFinal(e.target.checked)}
+                  style={{ width: "auto", marginRight: "5px" }}
+                  disabled={allStudents.length === 0}
+                />
+                Mostrar Média Final
+              </label>
+            </div>
+
+            {/* CHECKBOX: MOSTRAR ETAPAS */}
+            <div className="filter-group">
+              <label style={{ cursor: "pointer", fontWeight: "bold" }}>
+                <input
+                  type="checkbox"
+                  checked={showStages}
+                  onChange={(e) => setShowStages(e.target.checked)}
+                  style={{ width: "auto", marginRight: "5px" }}
+                  disabled={allStudents.length === 0}
+                />
+                Mostrar Etapas
+              </label>
+            </div>
+
+            {/* CHECKBOX: DESTAQUE DE ETAPAS */}
+            <div className="filter-group">
+              <label style={{ cursor: "pointer" }}>
+                <input
+                  type="checkbox"
+                  checked={highlightStages}
+                  onChange={(e) => setHighlightStages(e.target.checked)}
+                  style={{ width: "auto", marginRight: "5px" }}
+                  disabled={allStudents.length === 0}
+                />
+                Destacar Etapas
+              </label>
             </div>
           </div>
 
-          <div className="filter-group">
-            <label>Média:</label>
-            <input
-              type="number"
-              value={mediaCorte}
-              step="0.1"
-              onChange={(e) => setMediaCorte(parseFloat(e.target.value))}
-            />
-          </div>
+          {/* COLUNA 3: FILTRO DE DISCIPLINAS */}
+          <div className="control-column" style={{ minWidth: "200px" }}>
+            <div className="filter-group">
+              <label>Disciplinas:</label>
+              <div className="discipline-filter">
+                <button
+                  onClick={() => setDisciplineFilterOpen(!disciplineFilterOpen)}
+                  disabled={allStudents.length === 0}
+                  className="discipline-filter-button"
+                >
+                  Selecionar ({selectedDisciplines.length})
+                </button>
 
-          <div className="filter-group" style={{ marginLeft: "10px" }}>
-            <label
-              style={{
-                cursor: "pointer",
-                display: "flex",
-                alignItems: "center",
-                fontSize: "0.9em",
-              }}
-            >
-              <input
-                type="checkbox"
-                checked={highlightStages}
-                onChange={(e) => setHighlightStages(e.target.checked)}
-                style={{ width: "auto", marginRight: "5px" }}
-              />
-              Destacar Etapas
-            </label>
+                {disciplineFilterOpen && (
+                  <div className="discipline-dropdown">
+                    <div
+                      style={{
+                        display: "flex",
+                        gap: "5px",
+                        padding: "5px",
+                        borderBottom: "1px solid #ddd",
+                        marginBottom: "5px",
+                      }}
+                    >
+                      <button
+                        onClick={selectAllDisciplines}
+                        style={{ fontSize: "0.7em", padding: "4px" }}
+                      >
+                        Todas
+                      </button>
+                      <button
+                        onClick={deselectAllDisciplines}
+                        style={{ fontSize: "0.7em", padding: "4px" }}
+                      >
+                        Nenhuma
+                      </button>
+                    </div>
+                    {disciplinesOrder.map((d) => (
+                      <label key={d} className="discipline-item">
+                        <input
+                          type="checkbox"
+                          checked={selectedDisciplines.includes(d)}
+                          onChange={() => handleDisciplineSelection(d)}
+                        />
+                        {d}
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
-
-          <button
-            className="btn-blue"
-            onClick={toggleDisciplineOrder}
-            disabled={allStudents.length === 0}
-          >
-            Inverter Ordem
-          </button>
         </div>
 
         <button className="btn-red" onClick={() => window.close()}>
